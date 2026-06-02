@@ -141,6 +141,20 @@ INSERT INTO ACCESS_LOGS (employee_id, event_type, log_date) VALUES
 (2, 'Check-Out', '2026-05-29 16:03:40'),
 (3, 'Check-In', '2026-05-29 08:05:00'),
 (3, 'Check-Out', '2026-05-29 16:15:30');
+(4, 'Check-In', '2026-05-29 15:55:00'),
+(4, 'Check-Out', '2026-05-29 23:58:45'),
+(5, 'Check-In', '2026-05-29 08:00:00'),
+(5, 'Check-Out', '2026-05-29 16:00:00');
+(5, 'Check-In', '2026-06-01 08:00:00'),
+(5, 'Check-Out', '2026-06-01 16:00:00');
+(1, 'Check-In', '2026-06-01 07:50:00'),
+(1, 'Check-Out', '2026-06-01 16:10:00');
+(2, 'Check-In', '2026-06-01 08:00:00'),
+(2, 'Check-Out', '2026-06-01 16:00:00');
+(3, 'Check-In', '2026-06-01 08:10:00'),
+(3, 'Check-Out', '2026-06-01 16:20:00');
+(4, 'Check-In', '2026-06-01 15:50:00'),
+(4, 'Check-Out', '2026-06-01 23:55:00');
 
 -- 8. Seed Data: Leave Requests
 INSERT INTO LEAVE_REQUESTS (employee_id, type, start_date, end_date, status) VALUES 

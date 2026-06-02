@@ -202,6 +202,32 @@ def get_employee_payslips(
     payslips = db.query(models.Payslip).filter(models.Payslip.employee_id == id).all()
     return payslips
 
+@app.post("/api/v1/payslips", response_model=schemas.PayslipOut)
+def create_payslip(
+    payslip: schemas.PayslipCreate,
+    db: Session = Depends(database.get_db),
+    current_user: models.Employee = Depends(auth.get_current_user)
+):
+    # RBAC check: only Admin/HR can create payslips
+    user_roles = [role.role_name for role in current_user.roles]
+    if not any(role in ["Admin", "HR"] for role in user_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admin or HR personnel can create payslips"
+        )
+    
+    # Verify employee exists
+    employee = db.query(models.Employee).filter(models.Employee.id == payslip.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Create payslip
+    db_payslip = models.Payslip(**payslip.model_dump())
+    db.add(db_payslip)
+    db.commit()
+    db.refresh(db_payslip)
+    return db_payslip
+
 # --- DEPARTMENTS & SCHEDULES ---
 @app.get("/api/v1/departments", response_model=List[schemas.DepartmentOut])
 def list_departments(db: Session = Depends(database.get_db), current_user: models.Employee = Depends(auth.get_current_user)):

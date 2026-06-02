@@ -1,0 +1,163 @@
+\documentclass[twocolumn,12pt]{article}
+
+\usepackage[margin=0.75in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+
+\title{\textbf{Secure Relational Human Resource \& Access Control Management System}}
+
+\author{
+Database Systems Final Project \\[6pt]
+\textbf{Project Members:} \\[4pt]
+Albert Pont -- 5327478 \\
+Maximo Casalla -- 46242269 \\
+Ignacio Elizeche -- 6502573 \\
+Cesar Oyola -- 5327478 \\
+Walter Bonifazi -- 5421244
+}
+
+\date{May -- June 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This project presents the design and implementation of a secure Human Resource and Access Control Management System developed using PostgreSQL, FastAPI, and Next.js. The relational schema was normalized from 0NF to Boyce-Codd Normal Form (BCNF) to eliminate redundancy and ensure structural integrity. The system integrates Role-Based Access Control (RBAC), JWT authentication, and ACID-compliant transaction management. The objective is to demonstrate correct relational modeling, normalization techniques, and secure multi-tier architecture in a real-world enterprise scenario.
+\end{abstract}
+
+\section{Introduction}
+
+This project implements a full-stack HR management system following a three-tier architecture: a PostgreSQL 15 database with a BCNF-normalized schema of 10 relations; a FastAPI backend with SQLAlchemy ORM, Pydantic validation, and JWT authentication; and a Next.js 16 frontend with React 19, TypeScript, and TanStack React Query. The system manages employees, departments, schedules, access control, leave requests, salary history, payslips, and role-based authentication. It is deployed via Docker Compose with three containerized services.
+
+\textbf{Issues identified:} The initial unnormalized design suffered from data redundancy (employee data duplicated across every transaction record), insertion anomalies (could not create a department without an employee), deletion anomalies (deleting the last employee removed the department), and update anomalies. Additionally, there was no authentication exposing salary data, no validation preventing duplicate attendance records, and no systematic leave approval workflow.
+
+\section{System Design}
+
+\subsection{Entity--Relationship Design}
+
+The conceptual model comprises 9 entities grouped into three categories:
+
+\textbf{Strong entities:}
+\begin{itemize}[leftmargin=*, nosep]
+    \item \textbf{EMPLOYEES} -- Central entity (name, email, salary, department, schedule).
+    \item \textbf{DEPARTMENTS} -- Organizational units.
+    \item \textbf{SCHEDULES} -- Work shifts (name, start/end time).
+    \item \textbf{ROLES} -- RBAC roles (Admin, HR, Employee).
+    \item \textbf{ACCESS\_LOGS} -- Attendance swipe events.
+    \item \textbf{LEAVE\_REQUESTS} -- Time-off applications.
+    \item \textbf{PAYSLIPS} -- Monthly payment records.
+\end{itemize}
+
+\textbf{Weak entities:}
+\begin{itemize}[leftmargin=*, nosep]
+    \item \textbf{SALARY\_HISTORY} -- Audit trail (identified by employee\_id + change\_date).
+    \item \textbf{USER\_CREDENTIALS} -- 1:1 with employees, stores password hash.
+\end{itemize}
+
+\textbf{Associative entity:}
+\begin{itemize}[leftmargin=*, nosep]
+    \item \textbf{EMPLOYEE\_ROLES} -- M:N junction between EMPLOYEES and ROLES.
+\end{itemize}
+
+\textbf{Key relationships:} DEPARTMENTS and SCHEDULES relate to EMPLOYEES via 1:N with \texttt{RESTRICT} (prevents deleting a department/schedule that still has employees). All other dependent tables (SALARY\_HISTORY, ACCESS\_LOGS, LEAVE\_REQUESTS, PAYSLIPS) use \texttt{CASCADE}, so deleting an employee automatically removes all associated records.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{er_diagram.jpg}
+\caption{Entity--Relationship Diagram of the HR \& Access Control System}
+\end{figure*}
+
+\subsection{Table Reduction and Normalization}
+
+Starting from the ER model, the relational mapping produced 10 physical tables: 7 from strong entities, 2 from weak entities, and 1 junction table for the M:N relationship. Notable decisions: USER\_CREDENTIALS is separated from EMPLOYEES to isolate authentication data; SALARY\_HISTORY is kept as a separate audit table for independent queryability.
+
+The schema was normalized from 0NF to BCNF through the following steps:
+
+\textbf{0NF $\rightarrow$ 1NF.} The unnormalized universal table \texttt{COMPANY\_ALL\_DATA} already contained atomic values. A composite PK \texttt{(employee\_id, history\_id, log\_id, leave\_id, payslip\_id)} was declared.
+
+\textbf{1NF $\rightarrow$ 2NF.} Partial dependencies were eliminated. For example, \texttt{employee\_name} depended only on \texttt{employee\_id}, not the full composite key. The table was decomposed into 5 independent relations.
+
+\textbf{2NF $\rightarrow$ 3NF.} Transitive dependencies were removed. The Employees table contained \texttt{employee\_id} $\rightarrow$ \texttt{department\_id} $\rightarrow$ \texttt{department\_name}. DEPARTMENTS and SCHEDULES were extracted into independent tables.
+
+\textbf{3NF $\rightarrow$ BCNF.} Every functional dependency was audited. In EMPLOYEES, the only determinants are \texttt{id} (PK) and \texttt{email} (candidate key). Since every determinant is a superkey, the schema satisfies BCNF.
+
+\section{Technology Justification}
+
+\textbf{PostgreSQL} was chosen for ACID compliance (critical for payroll operations), native foreign key support with \texttt{RESTRICT}/\texttt{CASCADE} rules, \texttt{DECIMAL(10,2)} for exact monetary arithmetic, and MVCC concurrency without locking.
+
+\textbf{FastAPI} provides Pydantic v2 automatic request/response validation, dependency injection for clean separation of authentication and authorization, and SQLAlchemy 2.0 ORM with explicit transaction control.
+
+\textbf{Next.js} offers App Router with nested layouts, TanStack React Query for server-state management, end-to-end TypeScript safety, and the \texttt{ProtectedRoute} component for role-based UI rendering.
+
+\section{Architecture and Transactions}
+
+\subsection{Authentication and RBAC}
+
+The system uses stateless JWT authentication: users submit credentials via OAuth2 form, receive a signed token (HS256, 2h expiry), and include it as a Bearer token on subsequent requests. A \texttt{RoleChecker} dependency enforces three privilege tiers: Admin, HR, and Employee.
+
+\begin{table}[h]
+\centering
+\caption{RBAC Permission Matrix}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Operation} & \textbf{Employee} & \textbf{HR} & \textbf{Admin} \\
+\midrule
+Create employee & -- & \checkmark & \checkmark \\
+Update salary & -- & \checkmark & \checkmark \\
+Log attendance (self) & \checkmark & \checkmark & \checkmark \\
+Log attendance (other) & -- & \checkmark & \checkmark \\
+View all access logs & own only & \checkmark & \checkmark \\
+View other payslips & -- & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Transaction Management}
+
+Two critical operations write to multiple tables atomically:
+
+\textbf{Employee Creation:} Three records (EMPLOYEES, USER\_CREDENTIALS, EMPLOYEE\_ROLES) are inserted via a single \texttt{db.commit()}. SQLAlchemy's \texttt{db.flush()} obtains the generated ID without committing; if any step fails, PostgreSQL rolls back all changes.
+
+\textbf{Salary Modification:} When an administrator updates a salary, a SALARY\_HISTORY record is automatically created before applying the new value. Both writes are committed atomically, ensuring the audit trail is always consistent with the actual salary.
+
+\textbf{Access Log Validation:} Before inserting a log, the backend queries the most recent event for that employee. If the last event has the same type (e.g., two consecutive Check-Ins), the request is rejected with HTTP 400.
+
+\section{Frontend and Results}
+
+The frontend implements 8 routes: login, main dashboard with summary cards, employee directory with inline salary editing, access log viewer with virtual swipe card, leave request management with approve/reject actions, payroll viewer with balance calculation, and advanced analytics with four tabbed reports (Attendance, Payroll, Leaves, Turnover). All server-state is managed via TanStack React Query with automatic cache invalidation.
+
+\textbf{Results achieved:}
+\begin{itemize}[leftmargin=*]
+    \item BCNF-normalized schema with 10 tables, zero redundancy, and zero anomalies.
+    \item Secure authentication with bcrypt password hashing and JWT tokens.
+    \item ACID-compliant multi-table writes for employee creation and salary modification.
+    \item RBAC enforcement at both API and UI levels.
+    \item Automatic salary audit trail via SALARY\_HISTORY trigger.
+    \item Sequential attendance validation preventing duplicate check-ins.
+    \item Containerized deployment via Docker Compose (PostgreSQL, FastAPI, Next.js).
+\end{itemize}
+
+\section{Conclusion}
+
+This project demonstrates the practical implementation of database normalization, transaction management, and secure RBAC authentication. The schema satisfies BCNF, eliminating all insertion, update, and deletion anomalies. The integration of PostgreSQL, FastAPI, and Next.js provides a scalable, type-safe, and secure three-tier architecture suitable for enterprise HR management. Key contributions include a rigorous 0NF-to-BCNF normalization walkthrough, ACID-compliant multi-table writes, three-tier RBAC with JWT authentication, and a complete full-stack application with role-based UI rendering.
+
+\section{References}
+
+\begin{itemize}[leftmargin=*]
+    \item Silberschatz, A., Korth, H.~F., \& Sudarshan, S. \textit{Database System Concepts}. 7th Edition, McGraw-Hill, 2019.
+    \item PostgreSQL Official Documentation. \url{https://www.postgresql.org/docs/15/}
+    \item FastAPI Official Documentation. \url{https://fastapi.tiangolo.com/}
+    \item Next.js Official Documentation. \url{https://nextjs.org/docs}
+    \item SQLAlchemy 2.0 Documentation. \url{https://docs.sqlalchemy.org/en/20/}
+    \item Pydantic v2 Documentation. \url{https://docs.pydantic.dev/}
+\end{itemize}
+
+\end{document}

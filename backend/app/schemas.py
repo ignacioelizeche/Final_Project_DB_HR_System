@@ -70,6 +70,12 @@ class LeaveRequestOut(LeaveRequestCreate):
         from_attributes = True
 
 # Payslip Schemas
+class PayslipCreate(BaseModel):
+    employee_id: int
+    period_month: str
+    period_year: int
+    net_salary_paid: Decimal
+
 class PayslipOut(BaseModel):
     id: int
     employee_id: int
